@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chebi-cli"
+version = "0.1.0"
+description = "Production-grade command-line wrapper for the ChEBI 2.0 backend API"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "chebi-cli maintainers" }
+]
+dependencies = [
+  "httpx>=0.27,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.10",
+  "pytest>=8.2",
+  "ruff>=0.5",
+]
+
+[project.scripts]
+chebi = "chebi_cli.cli:main"
+chebi-cli = "chebi_cli.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "ARG", "C4"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
