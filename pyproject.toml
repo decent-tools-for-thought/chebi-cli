@@ -7,7 +7,7 @@ name = "chebi-cli"
 version = "0.1.0"
 description = "Production-grade command-line wrapper for the ChEBI 2.0 backend API"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 license = { text = "MIT" }
 authors = [
   { name = "chebi-cli maintainers" }
@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "build>=1.2.2",
   "mypy>=1.10",
   "pytest>=8.2",
   "ruff>=0.5",
@@ -25,7 +26,6 @@ dev = [
 
 [project.scripts]
 chebi = "chebi_cli.cli:main"
-chebi-cli = "chebi_cli.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -34,14 +34,14 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py313"
 line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "ARG", "C4"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
