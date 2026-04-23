@@ -40,6 +40,7 @@ def test_top_level_help() -> None:
     assert "advanced-search" in out
     assert "compound" in out
     assert "calc" in out
+    assert "sparql" in out
     assert "workflow" in out
 
 
@@ -58,6 +59,34 @@ def test_docs_coverage_json(monkeypatch) -> None:  # type: ignore[no-untyped-def
     rc, out, _ = _run(["docs", "coverage", "--format", "json"])
     assert rc == 0
     assert "wrapped_endpoints" in out
+
+
+def test_sparql_queries_lists_presets(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(cli, "load_app_config", lambda **_: object())
+    monkeypatch.setattr(cli, "ChebiClient", lambda *_: DummyClient())
+    monkeypatch.setattr(
+        cli,
+        "list_sparql_queries",
+        lambda: {"count": 1, "items": [{"name": "predicates", "description": "List predicates"}]},
+    )
+    rc, out, err = _run(["sparql", "queries"])
+    assert rc == 0
+    assert "predicates: List predicates" in out
+    assert err == ""
+
+
+def test_sparql_query_renders_boolean_text(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(cli, "load_app_config", lambda **_: object())
+    monkeypatch.setattr(cli, "ChebiClient", lambda *_: DummyClient())
+    monkeypatch.setattr(
+        cli,
+        "sparql_query",
+        lambda *_args, **_kwargs: {"kind": "ask", "boolean": True, "body": "true"},
+    )
+    rc, out, err = _run(["sparql", "query", "ASK { ?s ?p ?o }"])
+    assert rc == 0
+    assert out.strip() == "true"
+    assert err == ""
 
 
 def test_parser_invalid_page(monkeypatch) -> None:  # type: ignore[no-untyped-def]

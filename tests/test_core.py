@@ -4,15 +4,20 @@ from typing import Any
 
 import pytest
 
+from chebi_cli.client import RawResponse
 from chebi_cli.core import (
     format_jsonl,
+    list_sparql_queries,
     parse_id_list,
     parse_json_input,
     parse_text_input,
     render_text,
     select_fields,
+    sparql_preset,
+    sparql_query,
     workflow_formula_profile,
 )
+from chebi_cli.sparql import parse_sparql_json, render_sparql_preset
 
 
 def test_select_fields_dict() -> None:
@@ -70,3 +75,72 @@ def test_workflow_formula_profile_aggregates_calls(monkeypatch) -> None:  # type
     assert payload["formula"] == "C8H9NO2"
     assert payload["avg_mass"] == "151.16"
     assert payload["monoisotopic_mass"] == "151.0633"
+
+
+def test_parse_sparql_json_select() -> None:
+    parsed = parse_sparql_json(
+        {
+            "head": {"vars": ["count"]},
+            "results": {
+                "bindings": [
+                    {
+                        "count": {
+                            "type": "literal",
+                            "datatype": "http://www.w3.org/2001/XMLSchema#int",
+                            "value": "7",
+                        }
+                    }
+                ]
+            },
+        }
+    )
+    assert parsed["kind"] == "select"
+    assert parsed["items"] == [{"count": "7^^http://www.w3.org/2001/XMLSchema#int"}]
+
+
+def test_render_sparql_preset_includes_graph_and_limit() -> None:
+    query = render_sparql_preset("predicates", graph="http://example.test/chebi", limit=7)
+    assert "GRAPH <http://example.test/chebi>" in query
+    assert "LIMIT 7" in query
+
+
+def test_list_sparql_queries_reports_presets() -> None:
+    payload = list_sparql_queries()
+    assert payload["count"] >= 1
+    assert any(item["name"] == "predicates" for item in payload["items"])
+
+
+def test_sparql_query_parses_boolean_result() -> None:
+    class DummyClient:
+        def get_binary(self, *_args, **_kwargs) -> RawResponse:
+            return RawResponse(
+                status_code=200,
+                headers={"content-type": "application/sparql-results+json"},
+                body=b'{"head":{"link":[]},"boolean":true}',
+            )
+
+    payload = sparql_query(
+        DummyClient(),  # type: ignore[arg-type]
+        query="ASK { ?s ?p ?o }",
+        sparql_base_url="https://example.test/sparql",
+        output_format="json",
+    )
+    assert payload["kind"] == "ask"
+    assert payload["boolean"] is True
+
+
+def test_sparql_preset_attaches_metadata(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(
+        "chebi_cli.core.sparql_query",
+        lambda *_args, **_kwargs: {"kind": "select", "variables": [], "items": [], "body": ""},
+    )
+    payload = sparql_preset(
+        client=None,  # type: ignore[arg-type]
+        name="predicates",
+        graph="http://example.test/chebi",
+        limit=5,
+        sparql_base_url="https://example.test/sparql",
+        output_format="json",
+    )
+    assert payload["preset"] == "predicates"
+    assert payload["graph"] == "http://example.test/chebi"

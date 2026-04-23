@@ -35,6 +35,7 @@ class RawResponse:
 
 class ChebiClient:
     def __init__(self, config: AppConfig) -> None:
+        self.sparql_base_url = config.sparql_base_url
         headers: dict[str, str] = {"Accept": "application/json"}
         cookies: dict[str, str] = {}
 
@@ -82,7 +83,7 @@ class ChebiClient:
         content: bytes | None = text_body.encode("utf-8") if text_body is not None else None
 
         try:
-            normalized_path = path.lstrip("/")
+            normalized_path = path if path.startswith(("http://", "https://")) else path.lstrip("/")
             response = self._http.request(
                 method,
                 normalized_path,

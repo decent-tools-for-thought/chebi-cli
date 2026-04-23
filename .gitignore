@@ -28,3 +28,4 @@ htmlcov/
 # IDE/editor metadata
 .idea/
 .vscode/
+.codex

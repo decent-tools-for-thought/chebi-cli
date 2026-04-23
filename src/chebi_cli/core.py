@@ -7,6 +7,12 @@ from typing import Any
 
 from chebi_cli.client import ChebiClient, RawResponse
 from chebi_cli.docs import coverage_summary
+from chebi_cli.sparql import (
+    list_sparql_presets,
+    parse_sparql_json,
+    render_sparql_preset,
+    sparql_accept_header,
+)
 
 SearchType = str
 
@@ -537,6 +543,61 @@ def parse_json_input(value: str | None, file_value: str | None) -> dict[str, Any
     if not isinstance(payload, dict):
         raise ValueError("Input JSON must be an object")
     return payload
+
+
+def sparql_query(
+    client: ChebiClient,
+    *,
+    query: str,
+    sparql_base_url: str,
+    output_format: str,
+    accept: str | None = None,
+) -> dict[str, Any]:
+    response = client.get_binary(
+        sparql_base_url,
+        params={"query": query},
+        accept=sparql_accept_header(output_format, accept),
+    )
+    body = response.body.decode("utf-8", errors="replace")
+    payload: dict[str, Any] = {
+        "query": query,
+        "contentType": response.headers.get("content-type", ""),
+        "body": body,
+    }
+    if "json" in str(payload["contentType"]) or body.lstrip().startswith("{"):
+        raw = json.loads(body)
+        payload["raw"] = raw
+        payload.update(parse_sparql_json(raw))
+    return payload
+
+
+def list_sparql_queries() -> dict[str, Any]:
+    items = list_sparql_presets()
+    return {"count": len(items), "items": items}
+
+
+def sparql_preset(
+    client: ChebiClient,
+    *,
+    name: str,
+    graph: str,
+    limit: int,
+    sparql_base_url: str,
+    output_format: str,
+    accept: str | None = None,
+) -> dict[str, Any]:
+    query = render_sparql_preset(name, graph=graph, limit=limit)
+    result = sparql_query(
+        client,
+        query=query,
+        sparql_base_url=sparql_base_url,
+        output_format=output_format,
+        accept=accept,
+    )
+    result["preset"] = name
+    result["graph"] = graph
+    result["sparqlBaseUrl"] = sparql_base_url
+    return result
 
 
 def parse_id_list(

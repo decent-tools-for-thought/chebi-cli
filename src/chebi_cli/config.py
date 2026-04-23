@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_BASE_URL = "https://www.ebi.ac.uk/chebi/backend/api"
+DEFAULT_SPARQL_BASE_URL = "https://sparql.uniprot.org/sparql"
 ENV_BASE_URL = "CHEBI_BASE_URL"
+ENV_SPARQL_BASE_URL = "CHEBI_SPARQL_BASE_URL"
 ENV_TIMEOUT = "CHEBI_TIMEOUT"
 ENV_USER = "CHEBI_USER"
 ENV_PASSWORD = "CHEBI_PASSWORD"
@@ -29,6 +31,7 @@ class AuthConfig:
 @dataclass(frozen=True)
 class AppConfig:
     base_url: str = DEFAULT_BASE_URL
+    sparql_base_url: str = DEFAULT_SPARQL_BASE_URL
     timeout: float = 30.0
     auth: AuthConfig = AuthConfig()
 
@@ -75,6 +78,7 @@ def merge_config(
     *,
     file_config: dict[str, Any],
     cli_base_url: str | None,
+    cli_sparql_base_url: str | None,
     cli_timeout: float | None,
     cli_user: str | None,
     cli_password: str | None,
@@ -92,6 +96,15 @@ def merge_config(
     )
     if not isinstance(base_url, str) or not base_url.strip():
         raise ConfigError("Base URL must be a non-empty string")
+
+    sparql_base_url = (
+        cli_sparql_base_url
+        or os.environ.get(ENV_SPARQL_BASE_URL)
+        or file_config.get("sparql_base_url")
+        or DEFAULT_SPARQL_BASE_URL
+    )
+    if not isinstance(sparql_base_url, str) or not sparql_base_url.strip():
+        raise ConfigError("SPARQL base URL must be a non-empty string")
 
     if cli_timeout is not None:
         timeout = _as_float(cli_timeout, "--timeout")
@@ -115,6 +128,7 @@ def merge_config(
 
     return AppConfig(
         base_url=base_url.rstrip("/"),
+        sparql_base_url=sparql_base_url.rstrip("/"),
         timeout=timeout,
         auth=AuthConfig(user=user, password=password, session_id=session_id),
     )
@@ -124,6 +138,7 @@ def load_app_config(
     *,
     config_path: str | None,
     cli_base_url: str | None,
+    cli_sparql_base_url: str | None,
     cli_timeout: float | None,
     cli_user: str | None,
     cli_password: str | None,
@@ -134,6 +149,7 @@ def load_app_config(
     return merge_config(
         file_config=file_cfg,
         cli_base_url=cli_base_url,
+        cli_sparql_base_url=cli_sparql_base_url,
         cli_timeout=cli_timeout,
         cli_user=cli_user,
         cli_password=cli_password,

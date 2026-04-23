@@ -7,6 +7,7 @@
 ![License](https://img.shields.io/badge/license-MIT-14b8a6)
 
 Command-line wrapper for the public ChEBI backend API, with compound, search, ontology, structure, and calculation workflows.
+Also includes SPARQL access to public ChEBI mirrors hosted by UniProt and Rhea.
 
 </div>
 
@@ -51,6 +52,8 @@ $$\color{#0EA5E9}Structure \space \color{#14B8A6}Math$$
 
 $$\color{#0EA5E9}Docs \space \color{#14B8A6}Access$$
 - `chebi docs urls|coverage|schema`: inspect upstream URLs, wrapped coverage, and the live schema.
+- `chebi sparql query|queries|show`: run ad hoc SPARQL, inspect built-in descriptive-stat presets, and print preset source.
+- `chebi sparql graphs|classes|predicates|predicate-examples|property-coverage|deprecated`: inspect graph shape and whole-dataset descriptive stats through public ChEBI mirrors.
 - `chebi request --method ... --path ...`: direct request escape hatch for unsupported calls.
 - `chebi workflow resolve-term|formula-profile|structure-profile`: higher-order helper commands built from the wrapped endpoints.
 
@@ -62,7 +65,7 @@ Most public ChEBI endpoints work without authentication, but the CLI supports op
 Configuration precedence:
 
 1. CLI flags: `--user`, `--password`, `--session-id`, `--base-url`, `--timeout`, `--config`
-2. Environment: `CHEBI_USER`, `CHEBI_PASSWORD`, `CHEBI_SESSION_ID`, `CHEBI_BASE_URL`, `CHEBI_TIMEOUT`, `CHEBI_CONFIG`
+2. Environment: `CHEBI_USER`, `CHEBI_PASSWORD`, `CHEBI_SESSION_ID`, `CHEBI_BASE_URL`, `CHEBI_SPARQL_BASE_URL`, `CHEBI_TIMEOUT`, `CHEBI_CONFIG`
 3. Config file: `${XDG_CONFIG_HOME:-~/.config}/chebi-cli/config.json`
 4. Built-in defaults
 
@@ -71,6 +74,7 @@ Example:
 ```json
 {
   "base_url": "https://www.ebi.ac.uk/chebi/backend/api",
+  "sparql_base_url": "https://sparql.uniprot.org/sparql",
   "timeout": 30
 }
 ```
@@ -92,6 +96,9 @@ chebi search structure-get --smiles 'CCO' --search-type similarity --similarity 
 chebi ontology parents CHEBI:15377
 chebi calc monoisotopic-mass-from-formula --text 'C8H9NO2'
 chebi docs coverage --format json
+chebi sparql queries
+chebi sparql property-coverage --endpoint uniprot --format json
+chebi sparql query 'SELECT (COUNT(*) AS ?triples) WHERE { GRAPH <http://sparql.uniprot.org/chebi> { ?s ?p ?o } }' --format json
 ```
 
 ## Credits

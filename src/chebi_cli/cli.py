@@ -28,6 +28,7 @@ from chebi_cli.core import (
     get_molfile,
     get_sources_list,
     list_all_endpoints,
+    list_sparql_queries,
     ontology_all_children_in_path_get,
     ontology_all_children_in_path_post,
     ontology_children,
@@ -38,6 +39,8 @@ from chebi_cli.core import (
     post_compounds,
     render_text,
     select_fields,
+    sparql_preset,
+    sparql_query,
     structure_get,
     structure_search_get,
     structure_search_post,
@@ -46,6 +49,7 @@ from chebi_cli.core import (
     workflow_structure_profile,
 )
 from chebi_cli.docs import DOCS_URL, OPENAPI_URL
+from chebi_cli.sparql import DEFAULT_SPARQL_ENDPOINT, SPARQL_PRESETS, resolve_sparql_endpoint
 
 JsonObj = dict[str, Any]
 
@@ -67,6 +71,7 @@ def _parser() -> argparse.ArgumentParser:
     _add_calc_commands(sub)
     _add_workflow_commands(sub)
     _add_docs_commands(sub)
+    _add_sparql_commands(sub)
     _add_request_commands(sub)
 
     return parser
@@ -74,6 +79,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def _add_connection_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--base-url", help="Override API base URL")
+    parser.add_argument("--sparql-base-url", help="Override SPARQL endpoint URL")
     parser.add_argument("--timeout", type=float, help="Request timeout in seconds")
     parser.add_argument("--config", help="Path to JSON config file")
     parser.add_argument("--user", help="Basic auth user")
@@ -376,6 +382,50 @@ def _add_docs_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     schema.set_defaults(handler=_cmd_docs_schema)
 
 
+def _add_sparql_result_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--format", choices=["json", "text", "csv", "tsv", "raw"], default="text")
+    parser.add_argument("--accept", help="Override Accept header")
+    parser.add_argument(
+        "--endpoint",
+        choices=["uniprot", "rhea"],
+        default=DEFAULT_SPARQL_ENDPOINT,
+        help="Named SPARQL endpoint profile",
+    )
+
+
+def _add_sparql_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    parser = sub.add_parser("sparql", help="SPARQL query and dataset-statistics commands")
+    s_sub = parser.add_subparsers(dest="sparql_command", required=True)
+
+    query = s_sub.add_parser("query", help="Run an arbitrary SPARQL query")
+    query.add_argument("query", nargs="?")
+    query.add_argument("--file")
+    _add_sparql_result_args(query)
+    query.set_defaults(handler=_cmd_sparql_query)
+
+    queries = s_sub.add_parser("queries", help="List built-in SPARQL preset queries")
+    queries.add_argument("--format", choices=["json", "text", "tsv"], default="text")
+    queries.set_defaults(handler=_cmd_sparql_queries)
+
+    show = s_sub.add_parser("show", help="Print one built-in SPARQL preset query")
+    show.add_argument("name", choices=sorted(SPARQL_PRESETS))
+    show.add_argument("--limit", type=int, default=25)
+    show.add_argument(
+        "--endpoint",
+        choices=["uniprot", "rhea"],
+        default=DEFAULT_SPARQL_ENDPOINT,
+        help="Named SPARQL endpoint profile for graph IRI expansion",
+    )
+    show.add_argument("--format", choices=["text", "json"], default="text")
+    show.set_defaults(handler=_cmd_sparql_show)
+
+    for preset_name in sorted(SPARQL_PRESETS):
+        preset = s_sub.add_parser(preset_name, help=SPARQL_PRESETS[preset_name].description)
+        preset.add_argument("--limit", type=int, default=25)
+        _add_sparql_result_args(preset)
+        preset.set_defaults(handler=_cmd_sparql_preset, preset_name=preset_name)
+
+
 def _add_request_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     req = sub.add_parser("request", help="Direct request escape hatch")
     req.add_argument("--method", choices=["GET", "POST"], required=True)
@@ -398,6 +448,7 @@ def _dispatch(args: argparse.Namespace) -> int:
     config = load_app_config(
         config_path=args.config,
         cli_base_url=args.base_url,
+        cli_sparql_base_url=args.sparql_base_url,
         cli_timeout=args.timeout,
         cli_user=args.user,
         cli_password=args.password,
@@ -695,10 +746,26 @@ def _cmd_workflow_structure_profile(args: argparse.Namespace, client: ChebiClien
 
 
 def _cmd_docs_urls(args: argparse.Namespace, _client: ChebiClient) -> int:
-    payload: JsonObj = {"docs_url": DOCS_URL, "openapi_url": OPENAPI_URL}
+    payload: JsonObj = {
+        "docs_url": DOCS_URL,
+        "openapi_url": OPENAPI_URL,
+        "sparql_endpoints": {
+            "uniprot": "https://sparql.uniprot.org/sparql",
+            "rhea": "https://sparql.rhea-db.org/sparql",
+        },
+    }
     if args.format == "json":
         return _print_and_exit(format_json(payload))
-    return _print_and_exit(f"docs: {DOCS_URL}\nschema: {OPENAPI_URL}")
+    return _print_and_exit(
+        "\n".join(
+            [
+                f"docs: {DOCS_URL}",
+                f"schema: {OPENAPI_URL}",
+                "sparql-uniprot: https://sparql.uniprot.org/sparql",
+                "sparql-rhea: https://sparql.rhea-db.org/sparql",
+            ]
+        )
+    )
 
 
 def _cmd_docs_coverage(args: argparse.Namespace, _client: ChebiClient) -> int:
@@ -709,6 +776,99 @@ def _cmd_docs_coverage(args: argparse.Namespace, _client: ChebiClient) -> int:
 def _cmd_docs_schema(_args: argparse.Namespace, client: ChebiClient) -> int:
     schema = client.get_json("/schema/")
     return _print_and_exit(format_json(schema))
+
+
+def _resolve_sparql_query(args: argparse.Namespace) -> str:
+    if getattr(args, "file", None):
+        return Path(args.file).read_text(encoding="utf-8")
+    query = getattr(args, "query", None)
+    if isinstance(query, str) and query:
+        return query
+    raise ValueError("Provide a SPARQL query string or --file")
+
+
+def _resolve_sparql_target(args: argparse.Namespace, client: ChebiClient) -> tuple[str, str]:
+    override = args.sparql_base_url
+    default_base_url, _graph = resolve_sparql_endpoint(DEFAULT_SPARQL_ENDPOINT)
+    client_base_url = getattr(client, "sparql_base_url", default_base_url)
+    if override is None and client_base_url != default_base_url:
+        override = client_base_url
+    return resolve_sparql_endpoint(args.endpoint, override)
+
+
+def _render_sparql_result(payload: dict[str, Any], output_format: str) -> str:
+    if output_format in {"csv", "tsv", "raw"}:
+        return str(payload["body"])
+    if output_format == "json":
+        return format_json(payload.get("raw", payload))
+    if payload.get("kind") == "ask":
+        return "true" if payload.get("boolean") else "false"
+    if payload.get("kind") == "select":
+        variables = cast(list[str], payload.get("variables", []))
+        items = cast(list[dict[str, Any]], payload.get("items", []))
+        if not items:
+            return ""
+        widths = {
+            column: max(len(column), *(len(str(item.get(column, ""))) for item in items))
+            for column in variables
+        }
+        lines = ["  ".join(column.ljust(widths[column]) for column in variables)]
+        for item in items:
+            lines.append(
+                "  ".join(str(item.get(column, "")).ljust(widths[column]) for column in variables)
+            )
+        return "\n".join(lines)
+    return str(payload["body"])
+
+
+def _cmd_sparql_query(args: argparse.Namespace, client: ChebiClient) -> int:
+    sparql_base_url, _graph = _resolve_sparql_target(args, client)
+    payload = sparql_query(
+        client,
+        query=_resolve_sparql_query(args),
+        sparql_base_url=sparql_base_url,
+        output_format=args.format,
+        accept=args.accept,
+    )
+    return _print_and_exit(_render_sparql_result(payload, args.format))
+
+
+def _cmd_sparql_queries(args: argparse.Namespace, _client: ChebiClient) -> int:
+    payload = list_sparql_queries()
+    if args.format == "json":
+        return _print_and_exit(format_json(payload))
+    if args.format == "tsv":
+        lines = ["name\tdescription"]
+        lines.extend(f"{item['name']}\t{item['description']}" for item in payload["items"])
+        return _print_and_exit("\n".join(lines))
+    lines = [f"{item['name']}: {item['description']}" for item in payload["items"]]
+    return _print_and_exit("\n".join(lines))
+
+
+def _cmd_sparql_show(args: argparse.Namespace, _client: ChebiClient) -> int:
+    _sparql_base_url, graph = resolve_sparql_endpoint(args.endpoint)
+    query = SPARQL_PRESETS[args.name].render(graph=graph, limit=args.limit)
+    if args.format == "json":
+        return _print_and_exit(
+            format_json(
+                {"name": args.name, "endpoint": args.endpoint, "graph": graph, "query": query}
+            )
+        )
+    return _print_and_exit(query)
+
+
+def _cmd_sparql_preset(args: argparse.Namespace, client: ChebiClient) -> int:
+    sparql_base_url, graph = _resolve_sparql_target(args, client)
+    payload = sparql_preset(
+        client,
+        name=args.preset_name,
+        graph=graph,
+        limit=args.limit,
+        sparql_base_url=sparql_base_url,
+        output_format=args.format,
+        accept=args.accept,
+    )
+    return _print_and_exit(_render_sparql_result(payload, args.format))
 
 
 def _parse_query_params(raw_params: list[str]) -> dict[str, str]:
